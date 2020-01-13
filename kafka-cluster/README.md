@@ -29,6 +29,11 @@
         - [Mutual TLS Authentication](#mutual-tls-authentication)
         - [SCRAM-SHA Authentication](#scram-sha-authentication)
     - [External listeners](#external-listeners)
+        - [Load balancer external listeners](#load-balancer-external-listeners)
+            - [Exposing Kafka using loadbalancers](#exposing-kafka-using-loadbalancers)
+            - [Customizing the DNS names of external loadbalancer listeners](#customizing-the-dns-names-of-external-loadbalancer-listeners)
+            - [Customizing the loadbalancer IP addresses](#customizing-the-loadbalancer-ip-addresses)
+        
 
 ### 1.1 Sample Kafka YAML configuration
 
@@ -843,4 +848,140 @@ When to use **SCRAM-SHA** authentication for clients
 
 #### External listeners
 
+Use an external listener to expose your **Strimzi** **Kafka** cluster to a client outside a **Kubernetes** environment.
 
+By default, **Strimzi** tries to automatically determine the hostnames and ports that your **Kafka** cluster advertises 
+to its clients. This is not sufficient in all situations, because the infrastructure on which **Strimzi** is running might 
+not provide the right hostname or port through which **Kafka** can be accessed. You can customize the advertised hostname and 
+port in the `overrides` property of the external listener. **Strimzi** will then automatically configure the advertised address 
+in the **Kafka** brokers and add it to the broker certificates so it can be used for TLS hostname verification. Overriding the 
+advertised host and ports is available for all types of external listeners.
+
+Example of an external listener configured with overrides for advertised addresses:
+
+```yaml
+# ...
+listeners:
+  external:
+    type: route
+    authentication:
+      type: tls
+    overrides:
+      brokers:
+      - broker: 0
+        advertisedHost: example.hostname.0
+        advertisedPort: 12340
+      - broker: 1
+        advertisedHost: example.hostname.1
+        advertisedPort: 12341
+      - broker: 2
+        advertisedHost: example.hostname.2
+        advertisedPort: 12342
+# ...
+```
+
+Additionally, you can specify the name of the bootstrap service. This name will be added to the broker certificates and 
+can be used for TLS hostname verification. Adding the additional bootstrap address is available for all types of external 
+listeners.
+
+Example of an external listener configured with an additional bootstrap address:
+
+```yaml
+# ...
+listeners:
+  external:
+    type: route
+    authentication:
+      type: tls
+    overrides:
+      bootstrap:
+        address: example.hostname
+```
+
+##### Load balancer external listeners
+
+External listeners of type `loadbalancer` expose **Kafka** by using `Loadbalancer` type `Services`.
+
+###### Exposing Kafka using loadbalancers
+
+When exposing **Kafka** using `Loadbalancer` type `Services`, a new `loadbalancer` service is created for every **Kafka** 
+broker pod. An additional loadbalancer is created to serve as a **Kafka** bootstrap address. Loadbalancers listen to 
+connections on port 9094.
+
+By default, **TLS** encryption is enabled. To disable it, set the `tls` field to `false`.
+
+Example of an external listener of type `loadbalancer`
+
+```yaml
+# ...
+listeners:
+  external:
+    type: loadbalancer
+    authentication:
+      type: tls
+# ...
+```
+
+###### Customizing the DNS names of external loadbalancer listeners
+
+On `loadbalancer` listeners, you can use the `dnsAnnotations` property to add additional annotations to the loadbalancer 
+services. You can use these annotations to instrument DNS tooling such as External DNS, which automatically assigns DNS 
+names to the loadbalancer services.
+
+Example of an external listener of type `loadbalancer` using `dnsAnnotations`
+
+```yaml
+# ...
+listeners:
+  external:
+    type: loadbalancer
+    authentication:
+      type: tls
+    overrides:
+      bootstrap:
+        dnsAnnotations:
+          external-dns.alpha.kubernetes.io/hostname: kafka-bootstrap.mydomain.com.
+          external-dns.alpha.kubernetes.io/ttl: "60"
+      brokers:
+      - broker: 0
+        dnsAnnotations:
+          external-dns.alpha.kubernetes.io/hostname: kafka-broker-0.mydomain.com.
+          external-dns.alpha.kubernetes.io/ttl: "60"
+      - broker: 1
+        dnsAnnotations:
+          external-dns.alpha.kubernetes.io/hostname: kafka-broker-1.mydomain.com.
+          external-dns.alpha.kubernetes.io/ttl: "60"
+      - broker: 2
+        dnsAnnotations:
+          external-dns.alpha.kubernetes.io/hostname: kafka-broker-2.mydomain.com.
+          external-dns.alpha.kubernetes.io/ttl: "60"
+# ...
+```
+
+###### Customizing the loadbalancer IP addresses`
+
+On `loadbalancer` listeners, you can use the `loadBalancerIP` property to request a specific IP address when creating a 
+loadbalancer. Use this property when you need to use a loadbalancer with a specific IP address. The `loadBalancerIP field 
+is ignored if the cloud provider does not support the feature.
+
+Example of an external listener of type `loadbalancer` with specific loadbalancer IP address requests
+
+```yaml
+# ...
+listeners:
+  external:
+    type: loadbalancer
+    authentication:
+      type: tls
+    overrides:
+      bootstrap:
+        loadBalancerIP: 172.29.3.10
+      brokers:
+      - broker: 0
+        loadBalancerIP: 172.29.3.1
+      - broker: 1
+        loadBalancerIP: 172.29.3.2
+      - broker: 2
+        loadBalancerIP: 172.29.3.3
+# ...
+```
