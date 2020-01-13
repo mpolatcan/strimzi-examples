@@ -2,6 +2,11 @@
 
 **Credit**: https://strimzi.io/docs/0.15.0/#assembly-deployment-configuration-kafka-str
  
+## Appendix:
+
+- [1. Kafka cluster configuration](#1-kafka-cluster-configuration)
+- [1.6 Kafka broker listeners ](#16-kafka-broker-listeners)
+
 ## 1. Kafka cluster configuration
 
 ### 1.1. Sample Kafka YAML configuration
@@ -699,4 +704,121 @@ listeners:
   plain: {}
 # ...
 ```
+
+#### Configuring Kafka listeners
+
+Prerequisites
+
+- A **Kubernetes** cluster
+- A running **Cluster Operator**
+
+Procedure
+
+1. Edit the `listeners` property in the `Kafka.spec.kafka` resource.
+
+An example configuration of the plain (unencrypted) listener without authentication:
+
+```yaml
+apiVersion: kafka.strimzi.io/v1beta1
+kind: Kafka
+spec:
+  kafka:
+    # ...
+    listeners:
+      plain: {}
+    # ...
+  zookeeper:
+    # ...
+```
+
+2. Create or update the resource.
+
+    This can be done using `kubectl` apply:
+
+        kubectl apply -f your-file
+        
+#### Listener authentication
+
+The listener `authentication` property is used to specify an authentication mechanism specific to that listener:
+
+- **Mutual TLS** authentication (only on the listeners with **TLS** encryption)
+- **SCRAM-SHA** authentication
+
+If no `authentication` property is specified then the listener does not authenticate clients which connect through that listener.
+Authentication must be configured when using the **User Operator** to manage `KafkaUsers`.
+
+##### Authentication configuration for a listener
+
+The following example shows:
+
+- A `plain` listener configured for **SCRAM-SHA** authentication
+- A `tls` listener with **mutual TLS** authentication
+- An `external` listener with **mutual TLS** authentication
+
+An example showing listener authentication configuration:
+
+```yaml
+An example showing listener authentication configuration
+# ...
+listeners:
+  plain:
+    authentication:
+      type: scram-sha-512
+  tls:
+    authentication:
+      type: tls
+  external:
+    type: loadbalancer
+    tls: true
+    authentication:
+      type: tls
+# ...
+```
+
+##### Mutual TLS authentication
+
+**Mutual TLS** authentication is always used for the communication between **Kafka** brokers and **ZooKeeper** pods.
+
+**Mutual authentication** or **two-way authentication** is when both the server and the client present certificates. 
+**Strimzi** can configure **Kafka** to use **TLS (Transport Layer Security)** to provide encrypted communication between 
+**Kafka** brokers and clients either with or without mutual authentication. When you configure mutual authentication, the 
+broker authenticates the client and the client authenticates the broker.
+
+**!!! NOTE**
+**TLS** authentication is more commonly one-way, with one party authenticating the identity of another. For example, when 
+HTTPS is used between a web browser and a web server, the server obtains proof of the identity of the browser. When to 
+use **mutual TLS** authentication for clients **Mutual TLS** authentication is recommended for authenticating **Kafka** 
+clients when:
+
+- The client supports authentication using **mutual TLS** authentication
+- It is necessary to use the **TLS** certificates rather than passwords
+- You can reconfigure and restart client applications periodically so that they do not use expired certificates.
+
+##### SCRAM-SHA authentication
+
+**SCRAM (Salted Challenge Response Authentication Mechanism)** is an authentication protocol that can establish mutual 
+authentication using passwords. **Strimzi** can configure **Kafka** to use **SASL (Simple Authentication and Security Layer)**
+**SCRAM-SHA-512** to provide authentication on both unencrypted and TLS-encrypted client connections. **TLS** authentication is 
+always used internally between **Kafka** brokers and **ZooKeeper** nodes. When used with a **TLS** client connection, the 
+**TLS** protocol provides encryption, but is not used for authentication.
+
+The following properties of **SCRAM** make it safe to use **SCRAM-SHA** even on unencrypted connections:
+
+- The passwords are not sent in the clear over the communication channel. Instead the client and the server are each 
+challenged by the other to offer proof that they know the password of the authenticating user.
+- The server and client each generate a new challenge for each authentication exchange. This means that the exchange is 
+resilient against replay attacks.
+
+**Strimzi** supports **SCRAM-SHA-512** only. When a `KafkaUser.spec.authentication.type` is configured with `scram-sha-512` 
+the **User Operator** will generate a random 12 character password consisting of upper and lowercase ASCII letters and numbers.
+
+When to use **SCRAM-SHA** authentication for clients
+
+**SCRAM-SHA** is recommended for authenticating **Kafka** clients when:
+
+- The client supports authentication using **SCRAM-SHA-512**
+- It is necessary to use passwords rather than the **TLS** certificates
+- Authentication for unencrypted communication is required
+
+#### External listeners
 
