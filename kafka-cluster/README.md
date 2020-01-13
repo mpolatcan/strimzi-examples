@@ -2,9 +2,9 @@
 
 **Credit**: https://strimzi.io/docs/0.15.0/#assembly-deployment-configuration-kafka-str
  
-## 3.1. Kafka cluster configuration
+## 1. Kafka cluster configuration
 
-### 3.1.1. Sample Kafka YAML configuration
+### 1.1. Sample Kafka YAML configuration
 
 For help in understanding the configuration options available for your **Kafka** deployment, refer to sample YAML file 
 provided here.
@@ -158,7 +158,7 @@ with **Strimzi** may be copied to your **Kafka** resource configuration.
 
 19. Kafka Exporter configuration, which is used to expose data as Prometheus metrics.
 
-### 3.1.2 Data storage considerations
+### 1.2 Data storage considerations
 
 An efficient data storage infrastructure is essential to the optimal performance of **Strimzi**.
 
@@ -187,7 +187,7 @@ requires fast, low latency data access.
 It is recommended that you configure your storage system to use the **XFS** file system. **Strimzi** is also compatible 
 with the **ext4** file system, but this might require additional configuration for best results.
 
-### 3.1.3 Kafka and ZooKeeper storage types
+### 1.3 Kafka and ZooKeeper storage types
 
 As stateful applications, **Kafka** and **ZooKeeper** need to store data on disk. **Strimzi** supports three storage types 
 for this data:
@@ -381,3 +381,322 @@ When persistent storage is used, it creates **Persistent Volume Claims** with th
 - `[data-cluster-name]-zookeeper-idx`:
     **Persistent Volume Claim** for the volume used for storing data for the **ZooKeeper** node pod `idx`.
     
+##### Log directories
+
+The persistent volume will be used by the **Kafka** brokers as log directories mounted into the following path:
+
+- `/var/lib/kafka/data/kafka-log_idx_`:
+    Where `idx` is the **Kafka** broker pod index. For example `/var/lib/kafka/data/kafka-log0`.
+    
+#### Adding volumes to JBOD storage
+
+This procedure describes how to add volumes to a **Kafka*-* cluster configured to use **JBOD** storage. It cannot be applied to 
+**Kafka** clusters configured to use any other storage type.
+    
+**!!! NOTE**
+
+When adding a new volume under an `id` which was already used in the past and removed, you have to make sure that the 
+previously used **PersistentVolumeClaims** have been deleted.
+
+Prerequisites:
+
+- A **Kubernetes** cluster
+- A running **Cluster Operator**
+- A **Kafka** cluster with **JBOD** storage.
+
+Procedure
+
+1. Edit the `spec.kafka.storage.volumes` property in the `Kafka` resource. Add the new volumes to the `volumes` array.
+For example, add the new volume with id `2`.
+
+```yaml
+apiVersion: kafka.strimzi.io/v1beta1
+kind: Kafka
+metadata:
+  name: my-cluster
+spec:
+  kafka:
+    # ...
+    storage:
+      type: jbod
+      volumes:
+      - id: 0
+        type: persistent-claim
+        size: 100Gi
+        deleteClaim: false
+      - id: 1
+        type: persistent-claim
+        size: 100Gi
+        deleteClaim: false
+      - id: 2
+        type: persistent-claim
+        size: 100Gi
+        deleteClaim: false
+    # ...
+  zookeeper:
+    # ...
+```
+
+2. Create or update the resource.
+
+This can be done using `kubectl apply`:
+
+    kubectl apply -f your-file
+    
+#### Removing volumes from JBOD storage
+
+This procedure describes how to remove volumes from **Kafka** cluster configured to use **JBOD** storage. It cannot be applied 
+to **Kafka** clusters configured to use any other storage type. The **JBOD** storage always has to contain at least one volume.
+
+**!!! IMPORTANT**
+
+To avoid data loss, you have to move all partitions before removing the volumes.
+
+Prerequisites:
+
+- A **Kubernetes** cluster
+
+- A running **Cluster Operator**
+
+- A **Kafka** cluster with **JBOD** storage with two or more volumes.
+
+Procedure:
+
+1. Reassign all partitions from the disks which are you going to remove. Any data in partitions still assigned to the
+disks which are going to be removed might be lost.
+
+2. Edit the `spec.kafka.storage.volumes` property in `Kafka` resource. Remove one or more volumes from the `volumes` array.
+For example, remove the volumes with ids `1` and `2`.
+
+```yaml
+apiVersion: kafka.strimzi.io/v1beta1
+kind: Kafka
+metadata:
+  name: my-cluster
+spec:
+  kafka:
+    # ...
+    storage:
+      type: jbod
+      volumes:
+      - id: 0
+        type: persistent-claim
+        size: 100Gi
+        deleteClaim: false
+    # ...
+  zookeeper:
+    # ...
+```
+
+3. Create or update the resource.
+
+   This can be done using `kubectl apply`:
+   
+        kubectl apply -f your-file
+        
+### 1.4 Kafka broker replicas
+
+A **Kafka** cluster can run with many brokers. You can configure the number of brokers used for the **Kafka** cluster in
+`Kafka.spec.kafka.replicas`. The best number of brokers for your cluster hast to be determined based on your specific use
+case.
+
+#### Configuring the number of broker nodes
+
+This procedure describes how to configure the number of **Kafka** broker nodes in a new cluster. It only applies to new
+clusters with no partitions.
+
+Prerequisites
+
+- A **Kubernetes** cluster
+- A running **Cluster Operator**
+- A **Kafka** cluster with no topics defined yet.
+
+Procedure
+
+1. Edit the `replicas` property in the `Kafka` resource. For example:
+
+```yaml
+apiVersion: kafka.strimzi.io/v1beta1
+kind: Kafka
+metadata:
+  name: my-cluster
+spec:
+  kafka:
+    # ...
+    replicas: 3
+    # ...
+  zookeeper:
+    # ...
+```
+
+2. Create or update the resource.
+
+   This can be done using `kubectl apply:
+
+       kubectl apply -f your-file
+
+### 1.5 Kafka broker configuration
+
+**Strimzi** allows you to customize the configuration of the **Kafka** brokers in your **Kafka** cluster. You can specify and 
+configure most of the options listed in the "Broker Configs" section of the **Apache Kafka** documentation. You cannot 
+configure options that are related to the following areas:
+
+- Security (Encryption, Authentication, and Authorization)
+- Listener configuration
+- Broker ID configuration
+- Configuration of log data directories
+- Inter-broker communication
+- ZooKeeper connectivity
+
+These options are automatically configured by **Strimzi**.
+
+#### Kafka broker configuration
+
+The config property in `Kafka.spec.kafka` contains **Kafka** broker configuration options as keys with values in one of 
+the following JSON types:
+
+- String
+- Number
+- Boolean
+
+You can specify and configure all of the options in the "Broker Configs" section of the **Apache Kafka** documentation apart 
+from those managed directly by **Strimzi.** Specifically, you are prevented from modifying all configuration options with 
+keys equal to or starting with one of the following strings:
+
+- `listeners`
+- `advertised.`
+- `broker.`
+- `listener.`
+- `host.name`
+- `port`
+- `inter.broker.listener.name`
+- `sasl.`
+- `ssl.`
+- `security.`
+- `password.`
+- `principal.builder.class`
+- `log.dir`
+- `zookeeper.connect`
+- `zookeeper.set.acl`
+- `authorizer.`
+- `super.user`
+
+If the config property specifies a restricted option, it is ignored and a warning message is printed to the **Cluster 
+Operator** log file. All other supported options are passed to **Kafka**.
+
+An example **Kafka** broker configuration
+
+```yaml
+apiVersion: kafka.strimzi.io/v1beta1
+kind: Kafka
+metadata:
+  name: my-cluster
+spec:
+  kafka:
+    # ...
+    config:
+      num.partitions: 1
+      num.recovery.threads.per.data.dir: 1
+      default.replication.factor: 3
+      offsets.topic.replication.factor: 3
+      transaction.state.log.replication.factor: 3
+      transaction.state.log.min.isr: 1
+      log.retention.hours: 168
+      log.segment.bytes: 1073741824
+      log.retention.check.interval.ms: 300000
+      num.network.threads: 3
+      num.io.threads: 8
+      socket.send.buffer.bytes: 102400
+      socket.receive.buffer.bytes: 102400
+      socket.request.max.bytes: 104857600
+      group.initial.rebalance.delay.ms: 0
+    # ...
+```
+
+#### Configuring Kafka brokers
+
+You can configure an existing **Kafka** broker, or create a new **Kafka** broker with a specified configuration.
+
+Prerequisites
+
+- A **Kubernetes** cluster is available.
+- The **Cluster Operator** is running.
+
+Procedure
+
+1. Open the YAML configuration file that contains the `Kafka` resource specifying the cluster deployment.
+
+2. In the `spec.kafka.config` property in the `Kafka` resource, enter one or more **Kafka** configuration settings. 
+For example:
+
+```yaml
+apiVersion: kafka.strimzi.io/v1beta1
+kind: Kafka
+spec:
+  kafka:
+    # ...
+    config:
+      default.replication.factor: 3
+      offsets.topic.replication.factor: 3
+      transaction.state.log.replication.factor: 3
+      transaction.state.log.min.isr: 1
+    # ...
+  zookeeper:
+    # ...
+```
+
+3. Apply the new configuration to create or update the resource.
+
+    Use `kubectl apply`:
+
+        kubectl apply -f kafka.yaml
+        
+where `kafka.yaml` is the YAML configuration file for the resource that you want to configure; for example, 
+`kafka-persistent.yaml`.
+
+### 1.6 Kafka broker listeners
+
+You can configure the listeners enabled in **Kafka** brokers. The following types of listener are supported:
+
+- Plain listener on port 9092 (without encryption)
+- TLS listener on port 9093 (with encryption)
+- External listener on port 9094 for access from outside of Kubernetes
+
+OAuth 2.0
+If you are using OAuth 2.0 token based authentication, you can configure the listeners to connect to your authorization 
+server. For more information, see Using OAuth 2.0 token based authentication.
+
+#### Kafka listeners
+
+You can configure **Kafka** broker listeners using the `listeners` property in the `Kafka.spec.kafka` resource. The 
+`listeners` property contains three sub-properties:
+
+- `plain`
+- `tls`
+- `external`
+
+Each listener will only be defined when the listeners object has the given property.
+
+An example of `listeners` property with all listeners enabled:
+
+```yaml
+# ...
+listeners:
+  plain: {}
+  tls: {}
+  external:
+    type: loadbalancer
+# ...
+```
+
+---
+
+An example of `listeners` property with only the plain listener enabled
+
+```yaml
+# ...
+listeners:
+  plain: {}
+# ...
+```
+
