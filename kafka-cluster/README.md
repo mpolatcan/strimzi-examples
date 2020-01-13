@@ -4,12 +4,33 @@
  
 ## Appendix:
 
-- [1. Kafka cluster configuration](#1-kafka-cluster-configuration)
-- [1.6 Kafka broker listeners ](#16-kafka-broker-listeners)
+- [**1.1 Sample Kafka YAML configuration**](#11-sample-kafka-yaml-configuration)
+- [**1.2 Data storage considerations**](#12-data-storage-considerations)
+    - [Apache Kafka and Zookeeper Storage](#apache-kafka-and-zookeeper-storage)
+    - [File systems](#file-systems)
+- [**1.3 Kafka and Zookeeper storage types**](#13-kafka-and-zookeeper-storage-types)
+    - [Ephemeral storage](#ephemeral-storage)
+    - [Persistent storage](#persistent-storage)
+        - [Storage class overrides ](#storage-class-overrides)
+        - [Persistent Volume Claim naming](#persistent-volume-claim-naming)
+        - [Log directories](#log-directories)
+    - [Adding volumes to JBOD storage](#adding-volumes-to-jbod-storage)
+    - [Removing volumes from JBOD storage](#removing-volumes-from-jbod-storage)
+- [**1.4 Kafka broker replicas**](#14-kafka-broker-replicas)
+    - [Configuring the number of broker nodes](#configuring-the-number-of-broker-nodes)
+- [**1.5 Kafka broker configuration**](#15-kafka-broker-configuration)
+    - [Kafka broker configuration](#kafka-broker-configuration)
+    - [Configuring Kafka brokers](#configuring-kafka-brokers)
+- [**1.6 Kafka broker listeners**](#16-kafka-broker-listeners)
+    - [Kafka listeners](#kafka-listeners)
+    - [Configuring Kafka listeners](#configuring-kafka-listeners)
+    - [Listener authentication](#listener-authentication)
+        - [Authentication configuration for a listener](#authentication-configuration-for-a-listener)
+        - [Mutual TLS Authentication](#mutual-tls-authentication)
+        - [SCRAM-SHA Authentication](#scram-sha-authentication)
+    - [External listeners](#external-listeners)
 
-## 1. Kafka cluster configuration
-
-### 1.1. Sample Kafka YAML configuration
+### 1.1 Sample Kafka YAML configuration
 
 For help in understanding the configuration options available for your **Kafka** deployment, refer to sample YAML file 
 provided here.
@@ -821,4 +842,5 @@ When to use **SCRAM-SHA** authentication for clients
 - Authentication for unencrypted communication is required
 
 #### External listeners
+
 
