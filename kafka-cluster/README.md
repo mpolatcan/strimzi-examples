@@ -42,8 +42,32 @@
             - [Exposing Kafka using Kubernetes Ingress](#exposing-kafka-using-kubernetes-ingress)
             - [Configuring the Ingress class](#configuring-the-ingress-class)
             - [Customizing the DNS names of external ingress listeners](#customizing-the-dns-names-of-external-ingress-listeners)
-            - []()
-            
+            - [Accessing Kafka using ingress](#accessing-kafka-using-ingress)
+    - [Network policies](#network-policies)
+        - [Network policy configuration for a listener](#network-policy-configuration-for-a-listener)
+        - [Restricting access to Kafka listeners using networkPolicyPeers](#restricting-access-to-kafka-listeners-using-networkpolicypeers)
+- [**1.7 Authentication and Authorization**](#17-authentication-and-authorization)
+    - [Authentication](#authentication)
+        - [TLS client authentication](#tls-client-authentication)
+    - [Configuring authentication in Kafka brokers](#configuring-authentication-in-kafka-brokers)
+    - [Authorization](#authorization)
+        - [Simple authorization](#simple-authorization)
+        - [Super users](#super-users)
+    - [Configuring authorization in Kafka brokers](#configuring-authorization-in-kafka-brokers)
+- [**1.8 Zookeeper replicas](#18-zookeeper-replicas)
+    - [Number of ZooKeeper nodes](#number-of-zookeeper-nodes)
+    - [Changing the number of ZooKeeper replicas](#changing-the-number-of-zookeeper-replicas)
+- [**1.9 ZooKeeper configuration](#19-zookeeper-configuration)
+    - [ZooKeeper configuration](#zookeeper-configuration)
+    - [Configuring ZooKeeper](#configuring-zookeeper)
+- [**1.10 ZooKeeper connection](#110-zookeeper-connection)
+    - [Connecting to ZooKeeper from a terminal](#connecting-to-zookeeper-from-a-terminal)
+- [**1.11 Entity Operator**](#111-entity-operator)
+    - [Configuration](#configuration)
+        - [Topic Operator](#topic-operator)
+        - [User Operator](#user-operator)
+     - [Configuring Entity Operator](#configuring-entity-operator)
+        
 ### 1.1 Sample Kafka YAML configuration
 
 For help in understanding the configuration options available for your **Kafka** deployment, refer to sample YAML file 
@@ -1370,3 +1394,654 @@ spec:
 authentication, you will also need to configure **SASL** or **TLS** authentication. Connect with your client to the host
 you specified in the configuration on port 443.
 
+#### Network policies
+
+**Strimzi** automatically creates a `NetworkPolicy` resource for every listener that is enabled on a **Kafka** broker. By
+default, a `NetworkPolicy` grants access to a listener to all applications and namespaces.
+
+If you want to restrict access to a listener at the network level to only selected applications or namespaces, use the 
+`networkPolicyPeers` field.
+
+Use network policies in conjuction with authentication and authorization.
+
+Each listener can have a different `networkPolicyPeers` configuration.
+
+##### Network policy configuration for a listener
+
+The following example shows a `networkPolicyPeers` configuration for a `plain` and a `tls` listener:
+
+```yaml
+# ...
+listeners:
+  plain:
+    authentication:
+      type: scram-sha-512
+    networkPolicyPeers:
+      - podSelector:
+          matchLabels:
+            app: kafka-sasl-consumer
+      - podSelector:
+          matchLabels:
+            app: kafka-sasl-producer
+  tls:
+    authentication:
+      type: tls
+    networkPolicyPeers:
+      - namespaceSelector:
+          matchLabels:
+            project: myproject
+      - namespaceSelector:
+          matchLabels:
+            project: myproject2
+# ...
+```
+
+In the example
+
+- Only application pods matching the labels `app: kafka-sasl-consumer` and `app: kafka-sasl-producer` can connect to the
+`plain` listener. The application pods must be running in the same namespace as the **Kafka** broker.
+
+- Only application pods running in namespaces matching the labels `project: myproject` and `project: myproject2` can connect 
+to the `tls` listener.
+
+**!!! NOTE**
+
+Your configuration of **Kubernetes** must support ingress NetworkPolicies in order to use network policies 
+
+##### Restricting access to Kafka listeners using networkPolicyPeers
+
+You can restrict access to a listener to only selected applications by using `networkPolicyPeers` field. 
+
+Prerequisites
+
+- A **Kubernetes** cluster with support for Ingress NetworkPolicies.
+- The **Cluster Operator** is running.
+
+Procedure.
+
+1. Open the `Kafka` resource.
+
+2. In the `networkPolicyPeers` field, define the application pods or namespaces that will be allowed to access the **Kafka**
+cluster.
+
+For example, to configure a `tls` listener to allow connections only from application pods with the label `app` set to
+`kafka-client`:
+
+```yaml
+apiVersion: kafka.strimzi.io/v1beta1
+kind: Kafka
+spec:
+  kafka:
+    # ...
+    listeners:
+      tls:
+        networkPolicyPeers:
+          - podSelector:
+              matchLabels:
+                app: kafka-client
+    # ...
+  zookeeper:
+    # ...
+```
+
+3. Create or update the resource:
+
+Use `kubectl apply`:
+
+    kubectl apply -f your-file
+
+### 1.7 Authentication and Authorization
+
+**Strimzi** supports authentication and authorization. Authentication can be configured independently for each listener.
+Authorization is always configured for the whole **Kafka** cluster.
+
+#### Authentication
+
+Authentication is configured as part of the listener configuration in the `authentication` property. The authentication
+mechanism is defined by the `type` field.
+
+When the `authentication` property is missing, no authentication is enabled on a given listener. The listener will accept 
+all connections without authentication.
+
+Supported authentication mechanisms:
+
+- TLS client authentication
+- SASL SCRAM-SHA-512
+- OAuth 2.0 token based authentication
+
+##### TLS client authentication
+
+**TLS Client** authentication is enabled by specifying the `type` as `tls`. The **TLS client** authentication is supported
+only on the `tls` listener.
+
+An example of `authenticatiom` with type `tls`
+
+```yaml
+# ...
+authentication:
+  type: tls
+# ...
+```
+
+#### Configuring authentication in Kafka brokers
+
+Prerequisites 
+
+- A **Kubernetes** cluster is available.
+- The **Cluster Operator** is running.
+
+Procedure
+
+1. Open the YAML configuration file that contains the `Kafka` resource specifying the cluster deployment.
+2. In the `spec.kafka.listeners` property in `Kafka` resource add the `authentication` field to listeners for 
+which you want to enable authentication. For example:
+
+```yaml
+apiVersion: kafka.strimzi.io/v1beta1
+kind: Kafka
+spec:
+  kafka:
+    # ...
+    listeners:
+      tls:
+        authentication:
+          type: tls
+    # ...
+  zookeeper:
+    # ...
+```
+
+3. Apply the new configuration to create or update the resource.
+
+  Use `kubectl apply`:
+  
+  kubectl apply -f kafka.yaml
+  
+where `kafka.yaml` is the YAML configuration file for the resource that you want to configure.
+
+#### Authorization
+
+You can configure authorization for **Kafka** brokers using the `authorization` property in the `Kafka.spec.kafka` resource.
+If the `authorization` property is missing, no authorization is enabled. When enabled, authorization is applied to all enabled
+listeners. The authorization method is defined in the `type` field; only Simple authorization is currently supported.
+
+You can optionally designate a list of super users in the `superUsers` field.
+
+##### Simple authorization
+
+Simple authorization in **Strimzi** uses the `SimpleAclAuthorizer` plugin, the default Access Control Lists (ACLs)
+authorization plugin provided with **Apache Kafka**. ACLs allow you to define which users have access to which resources
+at a granular level. To enable simple authorization, set the `type` field to `simple`.
+
+An example of Simple authorization.
+
+```yaml
+# ...
+authorization:
+  type: simple
+# ...
+```
+
+##### Super users
+
+Super users can access all resources in your **Kafka** cluster regardless of any access restrictions defined in ACLs. To
+designate super users for a **Kafka** cluster, enter a list of user principles in the `superUsers` field. If a user uses
+TLS Client Authentication, the username will be the common name from their certificate subject prefixed with `CN=`.
+
+An example of designating super users:
+
+```yaml
+# ...
+authorization:
+  type: simple
+  superUsers:
+    - CN=fred
+    - sam
+    - CN=edward
+# ...
+```
+
+**!!! NOTE**
+The `super.user` configuration option in the `config` property in `Kafka.spec.kafka` is ignored. Designate super users in
+the `authorization` property instead.
+
+#### Configuring authorization in Kafka brokers
+
+Configure authorization and designate super users for a particular **Kafka** broker.
+
+Prerequisites 
+
+- A **Kubernetes** cluster
+- The **Cluster Operator** is running 
+
+Procedure
+
+1. Add or edit the `authorization` property in the `Kafka.spec.kafka` resource. For example:
+
+```yaml
+apiVersion: kafka.strimzi.io/v1beta1
+kind: Kafka
+spec:
+  kafka:
+    # ...
+    authorization:
+      type: simple
+      superUsers:
+        - CN=fred
+        - sam
+        - CN=edward
+    # ...
+  zookeeper:
+    # ...
+```
+
+2. Create or update the resource
+
+This can be done using `kubectl apply`:
+
+    kubectl apply -f your-file
+
+### 1.8 ZooKeeper replicas
+
+**ZooKeeper** clusters or ensembles usually run with an **odd** number of nodes, typically three, five, or seven.
+
+The majority of nodes must be available in order to maintain an effective quorum. If **ZooKeeper** cluster loses its
+quorum, it will stop responding to clients and the **Kafka** brokers will stop working. Having a stable and highly available
+**ZooKeeeper** cluster is crucial for **Strimzi**
+
+Three-node cluster
+A three-node **ZooKeeper** cluster requires at least two nodes to be up and running in order to maintain the quorum. It can 
+tolerate only one node being unavailable.
+
+Five-node cluster
+A five-node **ZooKeeper** cluster requires at least three nodes to be up and running in order to maintain the quorum. It can 
+tolerate two nodes being unavailable.
+
+Seven-node-cluster
+A seven-node ZooKeeper cluster require at least four nodes to be up and running in order to maintain the quorum. It can 
+tolerate three nodes being unavailable.
+
+Having more nodes does not necessarily mean better performance, as the costs to maintain the quorum will rise with the number
+of nodes in the cluster. Depending on your availability requirements, you can decide for the number of nodes to use.
+
+#### Number of ZooKeeper nodes
+
+The number of **ZooKeeper** nodes can be configured using the `replicas` property in `Kafka.spec.zookeeper`.
+
+An example showing replicas configuration.
+
+```yaml
+apiVersion: kafka.strimzi.io/v1beta1
+kind: Kafka
+metadata:
+  name: my-cluster
+spec:
+  kafka:
+    # ...
+  zookeeper:
+    # ...
+    replicas: 3
+    # ...
+```
+
+#### Changing the number of ZooKeeper replicas
+
+Prerequisites
+
+- A **Kubernetes** cluster is available
+- The **Cluster Operator** is running
+
+Procedure. 
+
+1. Open the YAML configuration file that contains the `Kafka` resource specifying the cluster deployment.
+2. In the `spec.zookeeper.replicas` property in the `Kafka` resource, enter the number of replicated **ZooKeeper** servers.
+For example:
+
+```yaml
+apiVersion: kafka.strimzi.io/v1beta1
+kind: Kafka
+metadata:
+  name: my-cluster
+spec:
+  kafka:
+    # ...
+  zookeeper:
+    # ...
+    replicas: 3
+    # ...
+```
+
+3. Apply the new configuration to create or update the resource:
+
+Use `kubectl apply`:
+
+    kubectl apply -f kafka.yaml
+    
+where `kafka.yaml` is the YAML configuration file for the resource that you want to configure.
+
+### 1.9 ZooKeeper configuration
+
+**Strimzi** allows you to customize the configuration of **Apache ZooKeeper** nodes. You can specify and 
+configure most of the options listed in the **ZooKeeper** documentation.
+
+Options which cannot be configured are those related to the following areas:
+
+- Security (Encryption, Authentication, and Authorization)
+- Listener configuration
+- Configuration of data directories
+- ZooKeeper cluster composition
+
+These options are automatically configured by **Strimzi**
+
+#### ZooKeeper configuration
+
+**ZooKeeper** nodes are configured using the `config` property in `Kafka.spec.zookeeper`. This property contains the 
+`ZooKeeper` configuration options as keys. The values can be described using one of the following JSON types: 
+
+- String
+- Number
+- Boolean
+
+Users can specify and configure the options listed in **ZooKeeper** documentation with the exception of those options 
+which are managed directly by **Strimzi**. Specifically, all configuration options with keys equal to or starting with one 
+of the following strings are forbidden:
+
+- `server.`
+- `dataDir`
+- `dataLogDir`
+- `clientPort`
+- `authProvider`
+- `quorum.auth`
+- `requireClientAuthScheme`
+
+When one of the forbidden options is present in the `config`, it is ignored and a warning message is printed to the 
+**Cluster Operator** log file. All other options are passed to **ZooKeeper**.
+
+**!!! IMPORTANT**
+
+The **Cluster Operator** does not validate keys or values in the provided `config` object. When invalid configuration is 
+provided, the **ZooKeeper** cluster might not start or might become unstable. In such cases, the configuration in the 
+`Kafka.spec.zookeeper.config` object should be fixed and the **Cluster Operator** will roll out the new configuration to
+all **ZooKeeper** nodes.
+
+Selected options have default values.
+
+- `timeTick` with default value `2000`
+- `initLimit` with default value `5`
+- `syncLimit` with default value `2`
+- `autopurge.purgeInterval` with default value `1`
+
+These options will be automatically configured when they are not present in the `Kafka.spec.zookeeper.config` property.
+
+An example showing **ZooKeeper** configuration
+
+```yaml
+apiVersion: kafka.strimzi.io/v1beta1
+kind: Kafka
+spec:
+  kafka:
+    # ...
+  zookeeper:
+    # ...
+    config:
+      autopurge.snapRetainCount: 3
+      autopurge.purgeInterval: 1
+    # ...
+```
+
+#### Configuring ZooKeeper
+
+Prerequisites
+
+- A **Kubernetes** cluster is available
+- The **Cluster Operator** is running.
+
+Procedure
+
+1. Open the **YAML** configuration file that contains the `Kafka` resource specifying the cluster deployment.
+
+2. In the `spec.zookeeper.config` property in the `Kafka` resource, enter one or more **ZooKeeper** configuration settings.
+For example:
+
+```yaml
+apiVersion: kafka.strimzi.io/v1beta1
+kind: Kafka
+spec:
+  kafka:
+    # ...
+  zookeeper:
+    # ...
+    config:
+      autopurge.snapRetainCount: 3
+      autopurge.purgeInterval: 1
+    # ...
+```
+
+3. Apply the new configuration to create or update the resource.
+
+Use `kubectl apply`:
+
+    kubectl apply -f kafka.yaml
+    
+where `kafka.yaml` is the YAML configuration file for the resource that you want to configure.
+
+### 1.10 ZooKeeper connection
+
+**ZooKeeper** services are secured with encryption and authentication and are not intended to be used by external
+applications that are not part of **Strimzi**
+
+However, if you want to use **Kafka** CLI tools that require a connection to **ZooKeeper**, such as the `kafka-topics` tool,
+you can use a terminal inside a **Kafka** container and connect to the local end of the TLS tunnel to **ZooKeeper** by using
+`localhost:2181` as the **ZooKeeper** address.
+
+#### Connecting to ZooKeeper from a terminal
+
+Open a terminal inside a **Kafka** container to use **Kafka** CLI tools that require a **ZooKeeper** connection.
+
+Prerequisites
+
+- A **Kubernetes** cluster is available
+- A **kafka** cluster is running
+- The **Cluster Operator** is running.
+
+Procedure
+
+1. Open the terminal using the **Kubernetes** console or run the `exec` command from your CLI.
+
+For example
+
+    kubectl exec -it [cluster-name]-kafka-0 -- bin/kafka-topics.sh --list --zookeeper localhost:2181
+  
+Be sure to use `localhost:2181`.
+
+### 1.11 Entity Operator
+
+The **Entity Operator** is responsible for managing **Kafka**-related entities in a running **Kafka** cluster.
+
+The **Entity Operator** comprises the:
+
+- **Topic Operator** to manage **Kafka** topics
+- **User Operator** to manage **Kafka** users
+
+Through `Kafka` resource configuration, the **Cluster Operator** can deploy the **Entity Operator**, including one or both
+operators, when deploying a **Kafka** cluster.
+
+The operators are automatically configured to manage the topics and users of the **Kafka** cluster.
+
+#### Configuration
+
+The **Entity Operator** can be configured using the `entityOperator` property in `Kafka.spec`.
+
+The `entityOperator` property supports several-sub properties:
+
+- `tlsSidecar`
+- `topicOperator`
+- `userOperator`
+- `template`
+
+The `tlsSidecar` property can be used to configure the TLS sidecar container which is used to communicate with **ZooKeeper**.
+
+The `template` property can be used to configure details of the **Entity Operator** pod, such as labels, annotations, affinity,
+tolerations and so on.
+
+The `topicOperator` property contains the configuration of the **Topic Operator**. When the option is missing, the **Entity
+Operator** is deployed without the **Topic Operator**.
+
+The `userOperator` property contains the configuration of the **User Operator**. When this option is missing, the **Entity
+Operator** is deployed without the **User Operator**.
+
+Example of basic configuration enabling both operators:
+
+```yaml
+apiVersion: kafka.strimzi.io/v1beta1
+kind: Kafka
+metadata:
+  name: my-cluster
+spec:
+  kafka:
+    # ...
+  zookeeper:
+    # ...
+  entityOperator:
+    topicOperator: {}
+    userOperator: {}
+```
+
+When bot `topicOperator` and `userOperator` properties are missing, the **Entity Operator** will be not deployed.
+
+##### Topic Operator
+
+**Topic Operator** deployment can be configured using additional options inside `topicOperator` object. The following 
+options are supported.
+
+`watchedNamespace`
+
+The **Kubernetes** namespace in which the topic operator watches for `KafkaTopics`. Default is the namespace where the 
+**Kafka** cluster is deployed.
+
+`reconciliationIntervalSeconds`
+
+The interval between periodic reconciliations in seconds. Default `90`.
+
+`zookeeperSessionTimeoutSeconds`
+
+The **ZooKeeper** session timeout in seconds. Default `20`.
+
+`topicMetadataMaxAttempts`
+
+The number of attempts at getting topic metadata from **Kafka**. The time between each attempt is defined as an exponential
+back-off. Consider increasing this value when topic creation could take more time due to the number of partitions or replicas.
+Default `6`.
+
+`resources`
+
+The `resources` property configures the amount of resources allocated to the **Topic Operator**. 
+
+`logging`
+
+The `logging` property configures the logging of the **Topic Operator**.
+
+The **Topic Operator** has its own configurable logger:
+
+- `rootLogger.level`
+
+Example of **Topic Operator** configuration:
+
+```yaml
+apiVersion: kafka.strimzi.io/v1beta1
+kind: Kafka
+metadata:
+  name: my-cluster
+spec:
+  kafka:
+    # ...
+  zookeeper:
+    # ...
+  entityOperator:
+    # ...
+    topicOperator:
+      watchedNamespace: my-topic-namespace
+      reconciliationIntervalSeconds: 60
+    # ...
+```
+
+##### User Operator
+
+**User Operator** deployment can be configured using additional options inside the userOperator object. The following 
+options are supported:
+
+`watchedNamespace`
+The **Kubernetes** namespace in which the topic operator watches for `KafkaUsers`. Default is the namespace where the 
+**Kafka** cluster is deployed.
+
+`reconciliationIntervalSeconds`
+The interval between periodic reconciliations in seconds. Default `120.
+
+`zookeeperSessionTimeoutSeconds`
+The **ZooKeeper** session timeout in seconds. Default 6.
+
+`resources`
+The resources property configures the amount of resources allocated to the **User Operator**.
+
+`logging`
+The logging property configures the logging of the **User Operator**.
+
+The **User Operator** has its own configurable logger:
+- `rootLogger.level`
+
+Example of **Topic Operator** configuration:
+
+```yaml
+apiVersion: kafka.strimzi.io/v1beta1
+kind: Kafka
+metadata:
+  name: my-cluster
+spec:
+  kafka:
+    # ...
+  zookeeper:
+    # ...
+  entityOperator:
+    # ...
+    userOperator:
+      watchedNamespace: my-user-namespace
+      reconciliationIntervalSeconds: 60
+    # ...
+```
+
+#### Configuring Entity Operator
+
+Prerequisites
+
+- A **Kubernetes** cluster
+- A running **Cluster Operator**
+
+Procedure
+
+1. Edit the `entityOperator` property in the `Kafka` resource. For example:
+
+```yaml
+apiVersion: kafka.strimzi.io/v1beta1
+kind: Kafka
+metadata:
+  name: my-cluster
+spec:
+  kafka:
+    # ...
+  zookeeper:
+    # ...
+  entityOperator:
+    topicOperator:
+      watchedNamespace: my-topic-namespace
+      reconciliationIntervalSeconds: 60
+    userOperator:
+      watchedNamespace: my-user-namespace
+      reconciliationIntervalSeconds: 60
+```
+
+2. Create or update the resource:
+
+This can be done using `kubectl apply`:
+
+    kubectl apply -f your-file
+    
