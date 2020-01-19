@@ -33,8 +33,17 @@
             - [Exposing Kafka using loadbalancers](#exposing-kafka-using-loadbalancers)
             - [Customizing the DNS names of external loadbalancer listeners](#customizing-the-dns-names-of-external-loadbalancer-listeners)
             - [Customizing the loadbalancer IP addresses](#customizing-the-loadbalancer-ip-addresses)
-        
-
+            - [Accessing Kafka using loadbalancers](#accessing-kafka-using-loadbalancers)
+        - [Node Port external listeners](#node-port-external-listeners)
+            - [Exposing Kafka using node ports](#exposing-kafka-using-node-ports)
+            - [Customizing the DNS names of external node port listeners](#customizing-the-dns-names-of-external-node-port-listeners)
+            - [Accessing Kafka using node ports](#accessing-kafka-using-node-ports)
+        - [Kubernetes Ingress external listeners](#kubernetes-ingress-external-listeners)           
+            - [Exposing Kafka using Kubernetes Ingress](#exposing-kafka-using-kubernetes-ingress)
+            - [Configuring the Ingress class](#configuring-the-ingress-class)
+            - [Customizing the DNS names of external ingress listeners](#customizing-the-dns-names-of-external-ingress-listeners)
+            - []()
+            
 ### 1.1 Sample Kafka YAML configuration
 
 For help in understanding the configuration options available for your **Kafka** deployment, refer to sample YAML file 
@@ -985,3 +994,379 @@ listeners:
         loadBalancerIP: 172.29.3.3
 # ...
 ```
+
+###### Accessing Kafka using loadbalancers
+
+Prerequisites
+
+- A **Kubernetes** cluster
+- A running **Cluster Operator**
+
+Procedure
+
+1. Deploy **Kafka** cluster with an external listener enabled and configured to the type `loadbalancer`. 
+
+An example configuration with an external listener configured to use loadbalancers:
+
+```yaml
+apiVersion: kafka.strimzi.io/v1beta1
+kind: Kafka
+spec:
+  kafka:
+    # ...
+    listeners:
+      external:
+        type: loadbalancer
+        authentication:
+          type: tls
+        # ...
+    # ...
+  zookeeper:
+    # ...
+```
+
+2. Create or update the resource
+ 
+This can be done using `kubectl apply`.
+   
+    kubectl apply -f your-file
+        
+3. Find the hostname of the bootstrap loadbalancer.
+
+This can be done using `kubectl get`.
+    
+    kubectl get service [cluster-name]-kafka-external-bootstrap -o=jsonpath='{.status.loadBalancer.ingress[0].hostname}{"\n"}',
+  
+If no hostname was found (nothing was returned by the command), use the loadbalancer IP address. 
+
+This can be done using `kubectl get`:
+
+    kubectl get service [cluster-name]-kafka-external-bootstrap -o=jsonpath='{.status.loadBalancer.ingress[0].ip}{"\n"}'
+    
+Use the hostname or IP address together with port 9094 in your **Kafka** client as the bootstrap address.
+
+4. Unless **TLS** encryption was disabled, extract the public certificate of the broker certification authority.
+
+This can be done using `kubectl get`:
+
+    kubectl get secret [cluster-name]-cluster-ca-cert -o jsonpath='{.data.ca\.crt}' | base64 -d > ca.crt
+    
+Use the extracted certificate in your **Kafka** client to configure **TLS** connection. If you enabled any authentication, you
+will also need to configure **SASL** or **TLS** authentication..
+
+##### Node Port external listeners
+
+External listeners of type `nodeport` expose **Kafka** by using `NodePort` type `Services`
+
+###### Exposing Kafka using node ports
+
+When exposing **Kafka** using `NodePort` type `Services`, **Kafka** clients connect directly to the nodes of **Kubernetes**.
+You must enable access to the ports on the **Kubernetes** nodes for each client (for example, in firewalls or security groups).
+Each **Kafka** broker pod is then accessible on a separate port. Additional `NodePort` type `Service` is created to serve
+as a **Kafka** bootstrap address.
+
+When configuring the advertised addresses for the **Kafka** broker pods, **Strimzi** uses the address of the node on which
+the given pod is running. When selecting the node address, the different address types are used with the following priority:
+
+1. ExternalDNS
+2. ExternalIP
+3. Hostname
+4. InternalDNS
+5. InternalIP
+
+By default, **TLS** encryption is enabled. To disable it, set the `tls` field to `false`.
+
+**!!! NOTE**
+
+**TLS** hostname verification is not currently supported when exposing **Kafka** clusters using node ports.
+
+By default, the port numbers used for the bootstrap and broker services are automatically assigned by **Kubernetes**.
+However, you can override the assigned node ports by specifying the requested port numbers in the `overrides` property.
+**Strimzi** does not perform any validation on the requested ports; you must ensure that they are free and available for use.
+
+Example of an external listener configured with overrides for node ports.
+
+```yaml
+# ...
+listeners:
+  external:
+    type: nodeport
+    tls: true
+    authentication:
+      type: tls
+    overrides:
+      bootstrap:
+        nodePort: 32100
+      brokers:
+      - broker: 0
+        nodePort: 32000
+      - broker: 1
+        nodePort: 32001
+      - broker: 2
+        nodePort: 32002
+# ...
+```
+
+###### Customizing the DNS names of external node port listeners
+
+On `nodeport` listeners, you can use the `dnsAnnotations` property to add additional annotations to the nodeport services.
+You can use these annotations to instrument DNS tooling such as **External DNS**, which automatically assigns DNS names to 
+the cluster nodes.
+
+Example of an external listener of type `nodeport` using `dnsAnnotations`. 
+
+```yaml
+# ...
+listeners:
+  external:
+    type: nodeport
+    tls: true
+    authentication:
+      type: tls
+    overrides:
+      bootstrap:
+        dnsAnnotations:
+          external-dns.alpha.kubernetes.io/hostname: kafka-bootstrap.mydomain.com.
+          external-dns.alpha.kubernetes.io/ttl: "60"
+      brokers:
+      - broker: 0
+        dnsAnnotations:
+          external-dns.alpha.kubernetes.io/hostname: kafka-broker-0.mydomain.com.
+          external-dns.alpha.kubernetes.io/ttl: "60"
+      - broker: 1
+        dnsAnnotations:
+          external-dns.alpha.kubernetes.io/hostname: kafka-broker-1.mydomain.com.
+          external-dns.alpha.kubernetes.io/ttl: "60"
+      - broker: 2
+        dnsAnnotations:
+          external-dns.alpha.kubernetes.io/hostname: kafka-broker-2.mydomain.com.
+          external-dns.alpha.kubernetes.io/ttl: "60"
+# ...
+```
+
+
+###### Accessing Kafka using node ports
+
+Prerequisites
+
+- A **Kubernetes** cluster
+- A running **Cluster Operator**
+
+Procedure
+
+1. Deploy **Kafka** cluster with an external listener enabled and configured to the type `nodeport`.
+
+An example configuration with an external listener configured to use node ports:
+
+```yaml
+apiVersion: kafka.strimzi.io/v1beta1
+kind: Kafka
+spec:
+  kafka:
+    # ...
+    listeners:
+      external:
+        type: nodeport
+        tls: true
+        # ...
+    # ...
+  zookeeper:
+    # ...
+```
+
+2. Create or update the resource.
+
+This can be done using `kubectl apply`:
+
+    kubectl apply -f your-file
+    
+3. Find the port number of the bootstrap service.
+
+This can be done using `kubectl get`:
+
+    kubectl get service [cluster-name]-kafka-external-bootstrap -o=jsonpath='{.spec.ports[0].nodePort}{"\n"}'
+    
+The port should be used in the **Kafka** bootstrap address.
+
+4. Find the address of the Kubernetes node.
+
+This can be done using `kubectl get`:
+
+    kubectl get node node-name -o=jsonpath='{range .status.addresses[*]}{.type}{"\t"}{.address}{"\n"}'
+
+If several different addresses are returned, select the address type you want based on the following order.
+
+a. ExternalDNS
+b. ExternalIP
+c. Hostname
+d. InternalDNS
+e. InternalIP
+
+Use the address with the port found in the previous step in the **Kafka** bootstrap address.
+
+5. Unless **TLS** encryption was disabled, extract the public certificate of the broker certification authority. 
+
+This can be done using `kubectl get`:
+
+    kubectl get secret [cluster-name]-cluster-ca-cert -o jsonpath='{.data.ca\.crt}' | base64 -d > ca.crt
+    
+Use the extracted certificate in your **Kafka** client to configure **TLS** connection. If you enabled any authentication, you 
+will need to configure **SASL** or **TLS** authentication.
+
+##### Kubernetes Ingress external listeners
+
+External listeners of type `ingress` exposes **Kafka** by using **Kubernetes** `Ingress` and the **NGINX Ingress Controller
+for Kubernetes**.
+
+###### Exposing Kafka using Kubernetes Ingress
+
+When exposing **Kafka** using **Kubernetes** `Ingress` and the **NGINX Ingress Controller for Kubernetes**, a dedicated 
+`Ingress` resource is created for every **Kafka** broker pod. An additional `Ingress` resource is created to server as a 
+**Kafka** bootstrap address. **Kafka** clients can use these `Ingress` resources to connect to **Kafka** on port 443.
+
+**!!! NOTE**
+External listeners using `Ingress` have been currently tested only with **NGINX Ingress Controller for Kubernetes**.
+
+**Strimzi** uses the **TLS passthrough** feature of **NGINX Ingress Controller for Kubernetes**. Make sure **TLS passthrough**
+is enabled in your **NGINX Ingress Controller for Kubernetes** deployment. Because it is using the **TLS passthrough** 
+functionality, **TLS** encryption cannot be disabled when exposing **Kafka** using `Ingress`.
+
+The Ingress controller does not assign any hostnames automatically. You have to specify the hostnames which should be used
+by the bootstrap and per-broker services in the `spec.kafka.listeners.external.configuration` section. You also have to
+make sure that the hostnames resolve to the Ingress endpoints. **Strimzi** will not perform any validation that the
+requested hosts are available and properly routed to the Ingress endpoints.
+
+Example of an exteranl listener of type `ingress`:
+
+```yaml
+# ...
+listeners:
+  external:
+    type: ingress
+    authentication:
+      type: tls
+    configuration:
+      bootstrap:
+        host: bootstrap.myingress.com
+      brokers:
+      - broker: 0
+        host: broker-0.myingress.com
+      - broker: 1
+        host: broker-1.myingress.com
+      - broker: 2
+        host: broker-2.myingress.com
+# ...
+```
+
+###### Configuring the Ingress class
+
+By default, the `Ingress` class is set to `nginx`. You can change the `Ingress` class using the `class` property.
+
+Example of an external listener of type `ingress` using `Ingress` class `nginx-internal`.
+
+```yaml
+# ...
+listeners:
+  external:
+    type: ingress
+    class: nginx-internal
+    # ...
+# ...
+```
+
+###### Customizing the DNS names of external ingress listeners.
+
+On `ingress` listeners, you can use the `dnsAnnotations` property to add additional annotations to the ingress resources.
+You can use these annotations to instrument DNS tooling such as **External DNS**, which automatically assigns DNS names to
+the ingress resources.
+
+Example of an external listener of type `ingress` using `dnsAnnotations`.
+
+```yaml
+# ...
+listeners:
+  external:
+    type: ingress
+    authentication:
+      type: tls
+    configuration:
+      bootstrap:
+        dnsAnnotations:
+          external-dns.alpha.kubernetes.io/hostname: bootstrap.myingress.com.
+          external-dns.alpha.kubernetes.io/ttl: "60"
+        host: bootstrap.myingress.com
+      brokers:
+      - broker: 0
+        dnsAnnotations:
+          external-dns.alpha.kubernetes.io/hostname: broker-0.myingress.com.
+          external-dns.alpha.kubernetes.io/ttl: "60"
+        host: broker-0.myingress.com
+      - broker: 1
+        dnsAnnotations:
+          external-dns.alpha.kubernetes.io/hostname: broker-1.myingress.com.
+          external-dns.alpha.kubernetes.io/ttl: "60"
+        host: broker-1.myingress.com
+      - broker: 2
+        dnsAnnotations:
+          external-dns.alpha.kubernetes.io/hostname: broker-2.myingress.com.
+          external-dns.alpha.kubernetes.io/ttl: "60"
+        host: broker-2.myingress.com
+# ...
+```
+
+###### Accessing Kafka using Ingress
+
+This procedure shows how to access **Strimzi** **Kafka** clusters from outside of **Kubernetes** using Ingress.
+
+Prerequisites
+
+- An **Kubernetes** cluster
+- Deployed **NGINX Ingress Controller for Kubernetes** with **TLS passthrough** enabled.
+- A running **Cluster Operator**
+
+Procedure
+
+1. Deploy **Kafka** cluster with an external listener enabled and configured to the type `ingress`.
+
+An example configuration with an external listener configured to use `Ingress`:
+
+```yaml
+apiVersion: kafka.strimzi.io/v1beta1
+kind: Kafka
+spec:
+  kafka:
+    # ...
+    listeners:
+      external:
+        type: ingress
+        authentication:
+          type: tls
+        configuration:
+          bootstrap:
+            host: bootstrap.myingress.com
+          brokers:
+          - broker: 0
+            host: broker-0.myingress.com
+          - broker: 1
+            host: broker-1.myingress.com
+          - broker: 2
+            host: broker-2.myingress.com
+    # ...
+  zookeeper:
+    # ...
+```
+
+2. Make sure the hosts in the `configuration` section properly resolve to the Ingress endpoints.
+
+3. Create or update the resource
+
+        kubectl apply -f your-file
+        
+4. Extract the public certificate of the broker certificate authority.
+
+        kubectl get secret [cluster-name]-cluster-ca-cert -o jsonpath='{.data.ca\.crt}' | base64 -d > ca.crt
+
+5. Use the extracted certificate in your **Kafka** client to configure the **TLS** connection. If you enabled any
+authentication, you will also need to configure **SASL** or **TLS** authentication. Connect with your client to the host
+you specified in the configuration on port 443.
+
